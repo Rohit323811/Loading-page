@@ -1,0 +1,55 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="UTF-8" />
+  <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+  <title>Loading Example Page</title>
+  <style>
+    body, html {
+      margin: 0;
+      padding: 0;
+      font-family: sans-serif;
+    }
+
+    #loader {
+      position: fixed;
+      top: 0; left: 0;
+      width: 100%; height: 100%;
+      background: white;
+      display: flex;
+      justify-content: center;
+      align-items: center;
+      font-size: 2rem;
+      font-weight: bold;
+      z-index: 1000;
+    }
+
+    #content {
+      display: none;
+      padding: 2rem;
+      text-align: center;
+    }
+  </style>
+</head>
+<body>
+
+  <!-- Loader -->
+  <div id="loader">⏳ Loading, please wait...</div>
+
+  <!-- Page Content -->
+  <div id="content">
+    <h1>Welcome to the Page!</h1>
+    <p>This page was displayed after a simulated load delay.</p>
+  </div>
+
+  <script>
+    // Simulate data fetching or script loading (3 seconds)
+    window.addEventListener('load', () => {
+      setTimeout(() => {
+        document.getElementById('loader').style.display = 'none';
+        document.getElementById('content').style.display = 'block';
+      }, 3000); // 3 seconds delay
+    });
+  </script>
+</body>
+</html>
