@@ -84,6 +84,24 @@
       display: block;
     }
 
+    #tongue {
+      position: absolute;
+      width: 30px; /* SVG viewBox width */
+      height: 40px; /* SVG viewBox height */
+      opacity: 0;
+      z-index: 5; /* Above paper, below herbs if they were to overlap during lick */
+      left: 50%; /* Initial position, will be animated */
+      bottom: 50px; /* Initial position, will be animated */
+      transform: translateX(-50%) rotate(0deg) scale(0.5); /* Start smaller and centered */
+      transform-origin: bottom center;
+    }
+
+    #tongue svg {
+      width: 100%;
+      height: 100%;
+      display: block;
+    }
+
     /* Animations */
     /* @keyframes fall is removed - will be handled by JavaScript */
     /* @keyframes gatherHerbs is removed - will be handled by JavaScript */
@@ -129,6 +147,31 @@
         100% { transform: translateX(-50%) translateY(0px) rotate(0deg); }
     }
 
+    @keyframes lickPaper {
+      0% { /* Initial state set by JS */
+        opacity: 0;
+        transform: translateX(-50%) translateY(30px) rotate(-30deg) scale(0.5); /* Start below, rotated, small */
+      }
+      20% { /* Appear and move to start of lick */
+        opacity: 1;
+        transform: translateX(-80px) translateY(0px) rotate(15deg) scale(1); /* Position left of paper edge */
+      }
+      30% { /* First part of lick */
+        transform: translateX(-40px) translateY(-5px) rotate(5deg) scale(1.05);
+      }
+      60% { /* Lick across */
+        transform: translateX(20px) translateY(-5px) rotate(-5deg) scale(1.05);
+      }
+      80% { /* Retract a bit */
+        opacity: 1;
+        transform: translateX(0px) translateY(10px) rotate(-20deg) scale(0.8);
+      }
+      100% { /* Disappear */
+        opacity: 0;
+        transform: translateX(-10px) translateY(40px) rotate(-40deg) scale(0.4);
+      }
+    }
+
 
     #content {
       display: none;
@@ -145,6 +188,7 @@
     <div id="animation-container">
       <!-- Herbs will be added here by JS -->
       <div id="rolling-paper"></div>
+      <div id="tongue"></div> <!-- Tongue element added -->
       <div id="joint"></div>
     </div>
   </div>
@@ -162,6 +206,7 @@
       const animationContainer = document.getElementById('animation-container');
       const paper = document.getElementById('rolling-paper');
       const joint = document.getElementById('joint');
+      const tongue = document.getElementById('tongue'); // Get tongue element
 
       // --- Asset Definitions ---
       const herbSVGData = [
@@ -205,6 +250,30 @@
         </svg>
       `;
 
+      const tongueSVGData = `
+        <svg viewBox="0 0 30 40">
+          <defs>
+            <linearGradient id="tongueGradient" x1="50%" y1="0%" x2="50%" y2="100%">
+              <stop offset="0%" style="stop-color:#FF8A80; stop-opacity:1" /> <!-- Lighter pink -->
+              <stop offset="100%" style="stop-color:#FF5252; stop-opacity:1" /> <!-- Deeper pink -->
+            </linearGradient>
+            <filter id="tongueShadow" x="-30%" y="-30%" width="160%" height="160%">
+              <feGaussianBlur in="SourceAlpha" stdDeviation="1"/>
+              <feOffset dx="1" dy="2" result="offsetblur"/>
+              <feComponentTransfer>
+                <feFuncA type="linear" slope="0.4"/>
+              </feComponentTransfer>
+              <feMerge>
+                <feMergeNode/>
+                <feMergeNode in="SourceGraphic"/>
+              </feMerge>
+            </filter>
+          </defs>
+          <path d="M0 10 Q5 0, 15 0 Q25 0, 30 10 L25 30 Q15 40, 5 30 Z" fill="url(#tongueGradient)" filter="url(#tongueShadow)" />
+          <path d="M13 5 Q15 30, 17 5 Z" fill="rgba(255,255,255,0.2)" /> <!-- Highlight line -->
+        </svg>
+      `;
+
       // --- Animation Parameters ---
       const NUM_HERBS = 35; // Increased number of herbs as per new plan
       const PAPER_APPEAR_DELAY = 600; // ms - When paper starts to appear after load
@@ -215,14 +284,16 @@
       const ROLL_JOINT_APPEAR_DURATION = 800; // ms (joint appearing)
       const JOINT_FLOURISH_DURATION = 600; //ms
       const JOINT_FLOURISH_REPEATS = 2;
+      const TONGUE_LICK_ANIMATION_DURATION = 1500; // ms - Duration for the lickPaper CSS animation
 
       const herbs = []; // Array to store herb objects with their properties
 
       // Physics constants
       const GRAVITY = 0.08; // Acceleration due to gravity (pixels per frame^2)
       const DRAG_COEFFICIENT = 0.01; // Air resistance
-      const GROUND_Y = animationContainer.clientHeight - 30; // Y-coordinate of the paper surface, adjusted for herb size
+      // GROUND_Y will now be dynamic based on paper's position
       const LATERAL_SPREAD = 180; // Max horizontal spread for falling herbs
+      let paperRect; // To store paper dimensions and position
 
       // 1. Create Herbs (as JS objects)
       for (let i = 0; i < NUM_HERBS; i++) {
@@ -284,23 +355,44 @@
 
             // Flutter calculation: sinusoidal horizontal movement
             // Modulate flutter effect: stronger at start, dampens as it falls/lands or based on vy
-            const currentFlutterAmplitude = herb.flutterAmplitude * Math.max(0, (1 - (herb.y / GROUND_Y)*0.7 ) ); // Dampen flutter as it nears ground
+            const groundY = paperRect ? paperRect.top - animationContainer.getBoundingClientRect().top - herb.element.clientHeight/2 : animationContainer.clientHeight - herb.element.clientHeight;
+            const paperLeft = paperRect ? paperRect.left - animationContainer.getBoundingClientRect().left : 0;
+            const paperRight = paperRect ? paperRect.right - animationContainer.getBoundingClientRect().left : animationContainer.clientWidth;
+
+            const currentFlutterAmplitude = herb.flutterAmplitude * Math.max(0, (1 - (Math.max(0, herb.y) / groundY)*0.7 ) ); // Dampen flutter
             const flutterOffset = Math.sin(herb.flutterPhase + frameCount * herb.flutterFrequency) * currentFlutterAmplitude;
 
             herb.y += herb.vy;
-            herb.x += herb.vx + flutterOffset; // Base horizontal movement + flutter
-            herb.rotation += herb.rotationSpeed * Math.max(0.1, Math.abs(flutterOffset * 0.2)); // Rotation influenced by flutter "strength"
-
+            herb.x += herb.vx + flutterOffset;
+            herb.rotation += herb.rotationSpeed * Math.max(0.1, Math.abs(flutterOffset * 0.2));
 
             // Check for landing
-            if (herb.y >= GROUND_Y) {
-              herb.y = GROUND_Y;
-              herb.vy = 0;
-              herb.vx = 0;
-              herb.rotationSpeed = 0;
-              herb.landed = true;
+            if (herb.y >= groundY) {
+              herb.y = groundY;
+              herb.vy *= -0.3; // Small bounce effect, or set to 0 to stop
+
+              // Check horizontal boundaries
+              if (herb.x < paperLeft || herb.x > paperRight) {
+                // Herb missed the paper
+                herb.vx = (Math.random() - 0.5) * 2; // Give it a slight push to continue falling off screen
+                herb.vy = Math.random() * 1 + 0.5; // Fall downwards
+                                herb.landed = false; // Not truly landed on paper
+                                herb.targetGatherX = herb.x; // No specific gather point
+                                herb.targetGatherY = groundY + 100; // fall below
+                                if(elapsedTime > GATHER_HERBS_DELAY - 500) { // If close to gather time, just make it disappear
+                                    herb.gathered = true; // effectively remove it
+                                    herb.element.style.opacity = 0;
+                                }
+              } else {
+                // Landed on paper
+                herb.vx *= 0.5; // Dampen horizontal motion on landing
+                herb.rotationSpeed = 0;
+                herb.landed = true;
+              }
+               if (Math.abs(herb.vy) < 0.1 && herb.landed) herb.vy = 0; // Settle bounce
+
             }
-          } else if (herb.gathering && !herb.gathered) {
+          } else if (herb.gathering && !herb.gathered && herb.landed) { // Only gather if landed on paper
             // Move towards gather point
             const dx = herb.targetGatherX - herb.x;
             const dy = herb.targetGatherY - herb.y;
@@ -328,6 +420,17 @@
       // 2. Paper appears
       setTimeout(() => {
         paper.style.animation = `paperAppear ${PAPER_APPEAR_DURATION / 1000}s cubic-bezier(0.25, 0.1, 0.25, 1.5) forwards`;
+        // After paper animation starts, get its dimensions for herb landing
+        setTimeout(() => { // Allow time for paper to be somewhat visible
+            paperRect = paper.getBoundingClientRect();
+            // Adjust targetGatherX and targetGatherY based on actual paper position for herbs
+            herbs.forEach(herb => {
+                herb.targetGatherX = paperRect.width / 2;
+                // targetGatherY needs to be relative to animationContainer, not absolute screen
+                const containerTop = animationContainer.getBoundingClientRect().top;
+                herb.targetGatherY = (paperRect.top - containerTop) + (paperRect.height / 2) - herb.element.clientHeight;
+            });
+        }, PAPER_APPEAR_DURATION * 0.5); // Get rect when paper is mostly visible
       }, PAPER_APPEAR_DELAY);
 
       // 3. Gather herbs (trigger gathering state for JS animation)
@@ -342,21 +445,34 @@
         });
       }, GATHER_HERBS_DELAY);
 
+      // --- Tongue Lick Animation ---
+      const tongueLickStartTime = GATHER_HERBS_DELAY + GATHER_HERBS_DURATION + 100; // Start shortly after herbs should be gathered
+      setTimeout(() => {
+        if (tongue && paperRect) {
+          tongue.innerHTML = tongueSVGData;
+          // Dynamically set the tongue's initial bottom position to be just above the paper.
+          // The CSS animation handles the lick motion from this starting height.
+          const paperTopVisual = paperRect.top - animationContainer.getBoundingClientRect().top;
+          tongue.style.bottom = (animationContainer.clientHeight - paperTopVisual + 5) + 'px'; // Position slightly above paper's top edge.
+
+          tongue.style.animation = `lickPaper ${TONGUE_LICK_ANIMATION_DURATION / 1000}s ease-in-out forwards`;
+        }
+      }, tongueLickStartTime);
+      // --- End Tongue Lick Animation ---
+
       // 4. Roll joint (paper hides, joint appears with new SVG)
-      const rollStartTime = GATHER_HERBS_DELAY + GATHER_HERBS_DURATION * 0.6; // Start rolling as herbs are still gathering
+      // Adjusted to start after tongue lick animation completes
+      const rollStartTime = tongueLickStartTime + TONGUE_LICK_ANIMATION_DURATION;
       setTimeout(() => {
         paper.style.animation = `rollJointPaperHide ${ROLL_JOINT_HIDE_DURATION / 1000}s ease-in forwards`;
 
         joint.innerHTML = jointSVGData; // Set the SVG content
         joint.style.animation = `rollJointAppear ${ROLL_JOINT_APPEAR_DURATION / 1000}s ease-out forwards`;
-        // Joint appears slightly after paper starts to hide, creating an overlap for smoother transition
         joint.style.animationDelay = `${ROLL_JOINT_HIDE_DURATION * 0.25 / 1000}s`;
-
       }, rollStartTime);
 
       // 5. Joint flourish
-      // Ensure flourish starts after the joint has fully appeared.
-      const flourishStartTime = rollStartTime + ROLL_JOINT_HIDE_DURATION * 0.25 + ROLL_JOINT_APPEAR_DURATION;
+      const flourishStartTime = rollStartTime + (ROLL_JOINT_HIDE_DURATION * 0.25) + ROLL_JOINT_APPEAR_DURATION;
       setTimeout(() => {
         // Using 'forwards' for rollJointAppear to ensure it holds its state, then adding flourish
         // The jointFlourish animation is set to alternate and repeat.
