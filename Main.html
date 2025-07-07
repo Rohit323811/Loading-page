@@ -9,20 +9,105 @@
       margin: 0;
       padding: 0;
       font-family: sans-serif;
+      overflow: hidden; /* Prevent scrollbars during animation */
     }
 
     #loader {
       position: fixed;
       top: 0; left: 0;
       width: 100%; height: 100%;
-      background: white;
+      background: #f0f0f0; /* Light gray background */
       display: flex;
       justify-content: center;
       align-items: center;
-      font-size: 2rem;
-      font-weight: bold;
       z-index: 1000;
+      flex-direction: column; /* Align items vertically for text + animation */
     }
+
+    .loader-text {
+      font-size: 1.5rem;
+      font-weight: bold;
+      color: #333;
+      margin-bottom: 20px;
+    }
+
+    #animation-container {
+      width: 200px;
+      height: 150px;
+      position: relative;
+      /* border: 1px solid #ccc; */ /* For debugging */
+    }
+
+    .herb {
+      position: absolute;
+      width: 10px;
+      height: 10px;
+      background-color: #4CAF50; /* Green */
+      border-radius: 50%;
+      opacity: 0;
+    }
+
+    #rolling-paper {
+      position: absolute;
+      width: 100px;
+      height: 60px;
+      background-color: white;
+      border: 1px solid #ddd;
+      bottom: 10px; /* Positioned at the bottom of the container */
+      left: 50%;
+      transform: translateX(-50%);
+      opacity: 0;
+      border-radius: 2px;
+    }
+
+    #joint {
+      position: absolute;
+      width: 80px; /* Slightly narrower than paper */
+      height: 15px; /* Rolled up */
+      background-color: white;
+      border: 1px solid #ccc;
+      bottom: 30px; /* Positioned where rolling would finish */
+      left: 50%;
+      transform: translateX(-50%);
+      opacity: 0;
+      border-radius: 7.5px; /* Make it cylindrical */
+    }
+
+    /* Animations */
+    @keyframes fall {
+      0% { opacity: 0; transform: translateY(-60px) scale(0.5); } /* Start smaller and higher */
+      30% { opacity: 1; transform: translateY(20px) scale(1); } /* Initial impact point */
+      70% { opacity: 1; transform: translateY(95px) scale(1); } /* Settle lower, onto paper area */
+      100% { opacity: 1; transform: translateY(90px) scale(1); } /* Slight bounce up before settling */
+    }
+
+    @keyframes paperAppear {
+      from { opacity: 0; transform: translateX(-50%) translateY(20px) scale(0.7); } /* Appear from slightly below and smaller */
+      to { opacity: 1; transform: translateX(-50%) translateY(0px) scale(1); }
+    }
+
+    @keyframes gatherHerbs {
+      0% { opacity: 1; transform: scale(1) translateY(90px); } /* Start where they landed */
+      100% { opacity: 0; transform: scale(0.3) translateY(40px); } /* Shrink and move towards center of paper, then fade */
+    }
+
+    @keyframes rollJointPaperHide {
+      0% { opacity: 1; height: 60px; }
+      100% { opacity: 0; height: 15px; } /* Shrink paper as joint forms */
+    }
+
+    @keyframes rollJointAppear {
+      0% { opacity: 0; width: 70px; height: 10px; transform: translateX(-50%) translateY(10px); } /* Start smaller, slightly lower */
+      100% { opacity: 1; width: 80px; height: 15px; transform: translateX(-50%) translateY(0px); } /* Grow to final size */
+    }
+
+    @keyframes jointFlourish {
+        0% { transform: translateX(-50%) translateY(0px) rotate(0deg); }
+        30% { transform: translateX(-50%) translateY(-15px) rotate(-8deg); } /* Higher, more rotation */
+        70% { transform: translateX(-50%) translateY(5px) rotate(3deg); } /* Overshoot downwards */
+        100% { transform: translateX(-50%) translateY(0px) rotate(0deg); }
+    }
+
 
     #content {
       display: none;
@@ -34,7 +119,14 @@
 <body>
 
   <!-- Loader -->
-  <div id="loader">⏳ Loading, please wait...</div>
+  <div id="loader">
+    <div class="loader-text">Preparing your experience...</div>
+    <div id="animation-container">
+      <!-- Herbs will be added here by JS -->
+      <div id="rolling-paper"></div>
+      <div id="joint"></div>
+    </div>
+  </div>
 
   <!-- Page Content -->
   <div id="content">
@@ -43,12 +135,81 @@
   </div>
 
   <script>
-    // Simulate data fetching or script loading (3 seconds)
     window.addEventListener('load', () => {
+      const loader = document.getElementById('loader');
+      const content = document.getElementById('content');
+      const animationContainer = document.getElementById('animation-container');
+      const paper = document.getElementById('rolling-paper');
+      const joint = document.getElementById('joint');
+
+      const NUM_HERBS = 18; // Slightly more herbs
+      const HERB_FALL_DURATION = 1200; // ms - slower fall for more realism
+      const PAPER_APPEAR_DURATION = 600; // ms
+      const GATHER_HERBS_DURATION = 900; // ms
+      const ROLL_JOINT_HIDE_DURATION = 700; // ms (paper hiding)
+      const ROLL_JOINT_APPEAR_DURATION = 800; // ms (joint appearing)
+      const JOINT_FLOURISH_DURATION = 600; //ms
+      const JOINT_FLOURISH_REPEATS = 2; // Number of times the flourish animation repeats (e.g., 2 for one back and forth)
+
+
+      // 1. Create and animate herbs
+      for (let i = 0; i < NUM_HERBS; i++) {
+        const herb = document.createElement('div');
+        herb.classList.add('herb');
+        herb.style.left = Math.random() * 180 + 'px'; // within animation-container width
+        // Adjusted cubic-bezier for a more pronounced bounce and smoother fall
+        herb.style.animation = `fall ${HERB_FALL_DURATION / 1000}s cubic-bezier(0.5, -0.75, 0.2, 1.75) forwards`;
+        herb.style.animationDelay = `${Math.random() * 0.5}s`; // Wider spread for more natural fall
+        animationContainer.appendChild(herb);
+      }
+
+      // 2. Paper appears
       setTimeout(() => {
-        document.getElementById('loader').style.display = 'none';
-        document.getElementById('content').style.display = 'block';
-      }, 3000); // 3 seconds delay
+        // Smoother appearance with slight overshoot
+        paper.style.animation = `paperAppear ${PAPER_APPEAR_DURATION / 1000}s cubic-bezier(0.25, 0.1, 0.25, 1.5) forwards`;
+      }, HERB_FALL_DURATION * 0.4); // Start paper animation a bit earlier in herb fall, allowing overlap
+
+      // 3. Gather herbs (visual cue - herbs disappear)
+      const gatherStartTime = HERB_FALL_DURATION + PAPER_APPEAR_DURATION * 0.3; // Start after paper is somewhat visible
+      setTimeout(() => {
+        document.querySelectorAll('.herb').forEach((herb, index) => {
+          // Stagger the start of gather animation for each herb for a more natural effect
+          herb.style.animation = `gatherHerbs ${GATHER_HERBS_DURATION / 1000}s ease-in-out forwards`;
+          herb.style.animationDelay = `${parseFloat(herb.style.animationDelay) + (index * 0.03)}s`; // Add to existing fall delay
+        });
+      }, gatherStartTime);
+
+      // 4. Roll joint (paper hides, joint appears)
+      const rollStartTime = gatherStartTime + GATHER_HERBS_DURATION * 0.6; // Start rolling as herbs are still gathering
+      setTimeout(() => {
+        paper.style.animation = `rollJointPaperHide ${ROLL_JOINT_HIDE_DURATION / 1000}s ease-in forwards`;
+
+        joint.style.animation = `rollJointAppear ${ROLL_JOINT_APPEAR_DURATION / 1000}s ease-out forwards`;
+        // Joint appears slightly after paper starts to hide, creating an overlap for smoother transition
+        joint.style.animationDelay = `${ROLL_JOINT_HIDE_DURATION * 0.25 / 1000}s`;
+
+      }, rollStartTime);
+
+      // 5. Joint flourish
+      // Ensure flourish starts after the joint has fully appeared.
+      const flourishStartTime = rollStartTime + ROLL_JOINT_HIDE_DURATION * 0.25 + ROLL_JOINT_APPEAR_DURATION;
+      setTimeout(() => {
+        // Using 'forwards' for rollJointAppear to ensure it holds its state, then adding flourish
+        // The jointFlourish animation is set to alternate and repeat.
+        joint.style.animation = `rollJointAppear ${ROLL_JOINT_APPEAR_DURATION / 1000}s ease-out forwards, jointFlourish ${JOINT_FLOURISH_DURATION / 1000}s cubic-bezier(0.68, -0.6, 0.32, 1.6) ${JOINT_FLOURISH_REPEATS} alternate forwards`;
+        // The delay for jointFlourish is implicitly handled by its position in the animation string if rollJointAppear finishes first.
+        // However, to be explicit and ensure rollJointAppear has finished, this timeout is set.
+      }, flourishStartTime);
+
+
+      // Total animation time before showing content
+      // Calculated based on the sequence and overlaps, adding a final buffer
+      const totalSimulatedLoadTime = flourishStartTime + (JOINT_FLOURISH_DURATION * JOINT_FLOURISH_REPEATS) + 400; // 400ms buffer
+
+      setTimeout(() => {
+        loader.style.display = 'none';
+        content.style.display = 'block';
+      }, totalSimulatedLoadTime);
     });
   </script>
 </body>
