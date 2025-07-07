@@ -38,13 +38,18 @@
       /* border: 1px solid #ccc; */ /* For debugging */
     }
 
-    .herb {
+    .herb-svg-container { /* New container for SVG herbs */
       position: absolute;
-      width: 10px;
-      height: 10px;
-      background-color: #4CAF50; /* Green */
-      border-radius: 50%;
+      width: 15px; /* Adjust as needed based on SVG viewbox */
+      height: 15px; /* Adjust as needed */
       opacity: 0;
+      /* background-color: rgba(255,0,0,0.2); /* For debugging visibility */
+    }
+
+    .herb-svg-container svg {
+      width: 100%;
+      height: 100%;
+      display: block;
     }
 
     #rolling-paper {
@@ -74,21 +79,12 @@
     }
 
     /* Animations */
-    @keyframes fall {
-      0% { opacity: 0; transform: translateY(-60px) scale(0.5); } /* Start smaller and higher */
-      30% { opacity: 1; transform: translateY(20px) scale(1); } /* Initial impact point */
-      70% { opacity: 1; transform: translateY(95px) scale(1); } /* Settle lower, onto paper area */
-      100% { opacity: 1; transform: translateY(90px) scale(1); } /* Slight bounce up before settling */
-    }
+    /* @keyframes fall is removed - will be handled by JavaScript */
+    /* @keyframes gatherHerbs is removed - will be handled by JavaScript */
 
     @keyframes paperAppear {
       from { opacity: 0; transform: translateX(-50%) translateY(20px) scale(0.7); } /* Appear from slightly below and smaller */
       to { opacity: 1; transform: translateX(-50%) translateY(0px) scale(1); }
-    }
-
-    @keyframes gatherHerbs {
-      0% { opacity: 1; transform: scale(1) translateY(90px); } /* Start where they landed */
-      100% { opacity: 0; transform: scale(0.3) translateY(40px); } /* Shrink and move towards center of paper, then fade */
     }
 
     @keyframes rollJointPaperHide {
@@ -142,45 +138,141 @@
       const paper = document.getElementById('rolling-paper');
       const joint = document.getElementById('joint');
 
-      const NUM_HERBS = 18; // Slightly more herbs
-      const HERB_FALL_DURATION = 1200; // ms - slower fall for more realism
+      // --- Asset Definitions ---
+      const herbSVGData = [
+        // Simple leaf shape 1
+        '<svg viewBox="0 0 20 20"><path fill="#4CAF50" d="M10 0 C5 5, 5 15, 10 20 C15 15, 15 5, 10 0 Z"></path></svg>',
+        // Simple leaf shape 2 (slightly different)
+        '<svg viewBox="0 0 20 20"><path fill="#388E3C" d="M10 0 Q5 10, 10 20 Q15 10, 10 0 Z"></path></svg>',
+        // Simple leaf shape 3 (more elongated)
+        '<svg viewBox="0 0 20 20"><path fill="#558B2F" d="M10 0 C7 7, 7 13, 10 20 C13 13, 13 7, 10 0 Z"></path></svg>'
+      ];
+
+      // --- Animation Parameters ---
+      const NUM_HERBS = 25; // Increased number of herbs
+      const PAPER_APPEAR_DELAY = 600; // ms - When paper starts to appear after load
       const PAPER_APPEAR_DURATION = 600; // ms
+      const GATHER_HERBS_DELAY = 1800; // ms - When herbs start to gather (after falling)
       const GATHER_HERBS_DURATION = 900; // ms
       const ROLL_JOINT_HIDE_DURATION = 700; // ms (paper hiding)
       const ROLL_JOINT_APPEAR_DURATION = 800; // ms (joint appearing)
       const JOINT_FLOURISH_DURATION = 600; //ms
-      const JOINT_FLOURISH_REPEATS = 2; // Number of times the flourish animation repeats (e.g., 2 for one back and forth)
+      const JOINT_FLOURISH_REPEATS = 2;
 
+      const herbs = []; // Array to store herb objects with their properties
 
-      // 1. Create and animate herbs
+      // Physics constants
+      const GRAVITY = 0.08; // Acceleration due to gravity (pixels per frame^2)
+      const DRAG_COEFFICIENT = 0.01; // Air resistance
+      const GROUND_Y = animationContainer.clientHeight - 30; // Y-coordinate of the paper surface, adjusted for herb size
+      const LATERAL_SPREAD = 180; // Max horizontal spread for falling herbs
+
+      // 1. Create Herbs (as JS objects)
       for (let i = 0; i < NUM_HERBS; i++) {
-        const herb = document.createElement('div');
-        herb.classList.add('herb');
-        herb.style.left = Math.random() * 180 + 'px'; // within animation-container width
-        // Adjusted cubic-bezier for a more pronounced bounce and smoother fall
-        herb.style.animation = `fall ${HERB_FALL_DURATION / 1000}s cubic-bezier(0.5, -0.75, 0.2, 1.75) forwards`;
-        herb.style.animationDelay = `${Math.random() * 0.5}s`; // Wider spread for more natural fall
-        animationContainer.appendChild(herb);
+        const herbElement = document.createElement('div');
+        herbElement.classList.add('herb-svg-container');
+        herbElement.innerHTML = herbSVGData[i % herbSVGData.length]; // Cycle through SVG shapes
+        animationContainer.appendChild(herbElement);
+
+        herbs.push({
+          element: herbElement,
+          x: Math.random() * LATERAL_SPREAD + (animationContainer.clientWidth - LATERAL_SPREAD) / 2, // Start near center
+          y: -Math.random() * 100 - 15, // Start above the screen, 15 is approx herb height
+          vy: Math.random() * 2 + 1,  // Initial downward velocity
+          vx: (Math.random() - 0.5) * 2, // Initial horizontal velocity (slight drift)
+          rotation: Math.random() * 360,
+          rotationSpeed: (Math.random() - 0.5) * 4, // Degrees per frame
+          landed: false,
+          targetGatherX: animationContainer.clientWidth / 2, // Center of paper
+          targetGatherY: GROUND_Y - 5, // Slightly above ground
+          gathering: false,
+          gathered: false,
+          opacity: 0, // Start invisible
+          appearDelay: Math.random() * 1000 // Staggered appearance
+        });
+        herbElement.style.transform = `translate(${herbs[i].x}px, ${herbs[i].y}px) rotate(${herbs[i].rotation}deg)`;
+        herbElement.style.position = 'absolute'; // Ensure absolute positioning is set
       }
+
+      let animationStartTime = null;
+
+      function animateHerbs(timestamp) {
+        if (!animationStartTime) animationStartTime = timestamp;
+        const elapsedTime = timestamp - animationStartTime;
+
+        herbs.forEach(herb => {
+          if (herb.gathered) return;
+
+          // Appearance
+          if (!herb.opacity && elapsedTime > herb.appearDelay) {
+            herb.opacity = 1;
+            herb.element.style.opacity = 1;
+          }
+          if (!herb.opacity) return; // Don't animate if not yet appeared
+
+          if (!herb.landed) {
+            // Apply gravity
+            herb.vy += GRAVITY;
+            // Apply basic air resistance (drag)
+            herb.vy *= (1 - DRAG_COEFFICIENT);
+            herb.vx *= (1 - DRAG_COEFFICIENT);
+
+            herb.y += herb.vy;
+            herb.x += herb.vx;
+            herb.rotation += herb.rotationSpeed;
+
+            // Check for landing
+            if (herb.y >= GROUND_Y) {
+              herb.y = GROUND_Y;
+              herb.vy = 0; // Stop vertical motion (can add bounce here later)
+              herb.vx = 0; // Stop horizontal drift on landing
+              herb.rotationSpeed = 0; // Stop rotation
+              herb.landed = true;
+            }
+          } else if (herb.gathering && !herb.gathered) {
+            // Move towards gather point
+            const dx = herb.targetGatherX - herb.x;
+            const dy = herb.targetGatherY - herb.y;
+            const dist = Math.sqrt(dx * dx + dy * dy);
+
+            if (dist < 5) { // Close enough
+              herb.gathered = true;
+              herb.element.style.opacity = 0; // Fade out when gathered
+            } else {
+              herb.x += dx * 0.1; // Move 10% of the distance per frame
+              herb.y += dy * 0.1;
+            }
+          }
+          herb.element.style.transform = `translate(${herb.x}px, ${herb.y}px) rotate(${herb.rotation}deg)`;
+        });
+
+        // Continue animation as long as not all herbs are gathered or if other animations are running
+        if (herbs.some(h => !h.gathered) || elapsedTime < (GATHER_HERBS_DELAY + GATHER_HERBS_DURATION + 2000 /*buffer for other anims*/)) {
+          requestAnimationFrame(animateHerbs);
+        }
+      }
+
+      requestAnimationFrame(animateHerbs); // Start the herb animation loop
 
       // 2. Paper appears
       setTimeout(() => {
-        // Smoother appearance with slight overshoot
         paper.style.animation = `paperAppear ${PAPER_APPEAR_DURATION / 1000}s cubic-bezier(0.25, 0.1, 0.25, 1.5) forwards`;
-      }, HERB_FALL_DURATION * 0.4); // Start paper animation a bit earlier in herb fall, allowing overlap
+      }, PAPER_APPEAR_DELAY);
 
-      // 3. Gather herbs (visual cue - herbs disappear)
-      const gatherStartTime = HERB_FALL_DURATION + PAPER_APPEAR_DURATION * 0.3; // Start after paper is somewhat visible
+      // 3. Gather herbs (trigger gathering state for JS animation)
       setTimeout(() => {
-        document.querySelectorAll('.herb').forEach((herb, index) => {
-          // Stagger the start of gather animation for each herb for a more natural effect
-          herb.style.animation = `gatherHerbs ${GATHER_HERBS_DURATION / 1000}s ease-in-out forwards`;
-          herb.style.animationDelay = `${parseFloat(herb.style.animationDelay) + (index * 0.03)}s`; // Add to existing fall delay
+        herbs.forEach(herb => {
+          if (herb.landed) { // Only gather landed herbs
+            herb.gathering = true;
+          } else { // If not landed yet, mark as gathered to remove them
+            herb.gathered = true;
+            herb.element.style.opacity = 0;
+          }
         });
-      }, gatherStartTime);
+      }, GATHER_HERBS_DELAY);
 
       // 4. Roll joint (paper hides, joint appears)
-      const rollStartTime = gatherStartTime + GATHER_HERBS_DURATION * 0.6; // Start rolling as herbs are still gathering
+      const rollStartTime = GATHER_HERBS_DELAY + GATHER_HERBS_DURATION * 0.6; // Start rolling as herbs are still gathering
       setTimeout(() => {
         paper.style.animation = `rollJointPaperHide ${ROLL_JOINT_HIDE_DURATION / 1000}s ease-in forwards`;
 
