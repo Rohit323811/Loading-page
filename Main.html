@@ -67,15 +67,21 @@
 
     #joint {
       position: absolute;
-      width: 80px; /* Slightly narrower than paper */
-      height: 15px; /* Rolled up */
-      background-color: white;
-      border: 1px solid #ccc;
-      bottom: 30px; /* Positioned where rolling would finish */
+      width: 80px; /* SVG viewBox width */
+      height: 20px; /* SVG viewBox height */
+      /* background-color: rgba(0,255,0,0.2); /* For debugging placement */
+      /* border: none; Remove border if SVG is self-contained */
+      bottom: 28px; /* Adjusted for new height and visual center */
       left: 50%;
       transform: translateX(-50%);
       opacity: 0;
-      border-radius: 7.5px; /* Make it cylindrical */
+      /* border-radius: 0; /* Not needed for SVG */
+    }
+
+    #joint svg { /* Ensure SVG scales within the container */
+      width: 100%;
+      height: 100%;
+      display: block;
     }
 
     /* Animations */
@@ -88,13 +94,32 @@
     }
 
     @keyframes rollJointPaperHide {
-      0% { opacity: 1; height: 60px; }
-      100% { opacity: 0; height: 15px; } /* Shrink paper as joint forms */
+      0% {
+        opacity: 1;
+        width: 100px; /* Initial width of paper */
+        height: 60px;
+        transform: translateX(-50%) skewX(0deg);
+        transform-origin: center;
+      }
+      50% {
+        opacity: 0.7;
+        width: 40px; /* Paper narrows significantly */
+        height: 55px; /* Slight height reduction */
+        transform: translateX(-25%) skewX(-15deg); /* Move to one side and skew */
+        transform-origin: left center; /* Skew from left */
+      }
+      100% {
+        opacity: 0;
+        width: 10px; /* Almost disappears */
+        height: 20px; /* Matches joint height for smoother transition */
+        transform: translateX(0%) skewX(-30deg);
+        transform-origin: left center;
+      }
     }
 
-    @keyframes rollJointAppear {
-      0% { opacity: 0; width: 70px; height: 10px; transform: translateX(-50%) translateY(10px); } /* Start smaller, slightly lower */
-      100% { opacity: 1; width: 80px; height: 15px; transform: translateX(-50%) translateY(0px); } /* Grow to final size */
+    @keyframes rollJointAppear { /* Will be used for the SVG container */
+      0% { opacity: 0; transform: translateX(-50%) scale(0.6) translateY(15px); } /* Start smaller, slightly lower, and scaled */
+      100% { opacity: 1; transform: translateX(-50%) scale(1) translateY(0px); } /* Grow to final size and position */
     }
 
     @keyframes jointFlourish {
@@ -148,12 +173,44 @@
         '<svg viewBox="0 0 20 20"><path fill="#558B2F" d="M10 0 C7 7, 7 13, 10 20 C13 13, 13 7, 10 0 Z"></path></svg>'
       ];
 
+      const jointSVGData = `
+        <svg viewBox="0 0 80 20">
+          <!-- Main joint body (cone shape) -->
+          <defs>
+            <linearGradient id="jointGradient" x1="0%" y1="0%" x2="100%" y2="0%">
+              <stop offset="0%" style="stop-color:#fdfdfd;stop-opacity:1" />
+              <stop offset="15%" style="stop-color:#f8f8f8;stop-opacity:1" />
+              <stop offset="85%" style="stop-color:#f0f0f0;stop-opacity:1" />
+              <stop offset="100%" style="stop-color:#e8e8e8;stop-opacity:1" />
+            </linearGradient>
+            <filter id="slightShadow" x="-20%" y="-20%" width="140%" height="140%">
+              <feGaussianBlur in="SourceAlpha" stdDeviation="0.5"/>
+              <feOffset dx="0.5" dy="0.5" result="offsetblur"/>
+              <feComponentTransfer>
+                <feFuncA type="linear" slope="0.3"/>
+              </feComponentTransfer>
+              <feMerge>
+                <feMergeNode/>
+                <feMergeNode in="SourceGraphic"/>
+              </feMerge>
+            </filter>
+          </defs>
+          <path d="M0 2 Q5 0, 15 1 L65 5 Q75 7, 80 10 Q75 13, 65 15 L15 19 Q5 20, 0 18 Z" fill="url(#jointGradient)" filter="url(#slightShadow)" />
+          <!-- Twist lines -->
+          <path d="M10 2.5 Q20 4, 30 5.5 L32 14.5 Q22 16, 12 17.5 Z" fill="rgba(0,0,0,0.04)" />
+          <path d="M35 5 Q45 6, 55 7 L57 13 Q47 14, 37 15 Z" fill="rgba(0,0,0,0.04)" />
+          <path d="M60 6.5 Q65 7.5, 70 8.5 L71 11.5 Q66 12.5, 61 13.5 Z" fill="rgba(0,0,0,0.03)" />
+          <!-- Filter end (optional, can be a different color or just implied) -->
+          <path d="M0 2 Q3 2.5, 5 3 L5 17 Q3 17.5, 0 18 Z" fill="#E0C0A0" /> <!-- Light brown for filter -->
+        </svg>
+      `;
+
       // --- Animation Parameters ---
-      const NUM_HERBS = 25; // Increased number of herbs
+      const NUM_HERBS = 35; // Increased number of herbs as per new plan
       const PAPER_APPEAR_DELAY = 600; // ms - When paper starts to appear after load
       const PAPER_APPEAR_DURATION = 600; // ms
-      const GATHER_HERBS_DELAY = 1800; // ms - When herbs start to gather (after falling)
-      const GATHER_HERBS_DURATION = 900; // ms
+      const GATHER_HERBS_DELAY = 2200; // ms - Adjusted due to potentially longer fall times with flutter
+      const GATHER_HERBS_DURATION = 1000; // ms - Slightly longer gather time
       const ROLL_JOINT_HIDE_DURATION = 700; // ms (paper hiding)
       const ROLL_JOINT_APPEAR_DURATION = 800; // ms (joint appearing)
       const JOINT_FLOURISH_DURATION = 600; //ms
@@ -178,27 +235,35 @@
           element: herbElement,
           x: Math.random() * LATERAL_SPREAD + (animationContainer.clientWidth - LATERAL_SPREAD) / 2, // Start near center
           y: -Math.random() * 100 - 15, // Start above the screen, 15 is approx herb height
-          vy: Math.random() * 2 + 1,  // Initial downward velocity
-          vx: (Math.random() - 0.5) * 2, // Initial horizontal velocity (slight drift)
+          vy: Math.random() * 1.5 + 0.5,  // Initial downward velocity (reduced for flutter)
+          vx: (Math.random() - 0.5) * 1, // Initial horizontal velocity (reduced for flutter)
           rotation: Math.random() * 360,
-          rotationSpeed: (Math.random() - 0.5) * 4, // Degrees per frame
+          rotationSpeed: (Math.random() - 0.5) * 3, // Degrees per frame
+
+          // Flutter properties
+          flutterAmplitude: Math.random() * 2 + 1, // Max horizontal displacement for flutter
+          flutterFrequency: (Math.random() * 0.05 + 0.02) / (Math.random()*0.5 + 0.5), // Oscillations per frame
+          flutterPhase: Math.random() * Math.PI * 2, // Starting point in the sine wave
+
           landed: false,
           targetGatherX: animationContainer.clientWidth / 2, // Center of paper
           targetGatherY: GROUND_Y - 5, // Slightly above ground
           gathering: false,
           gathered: false,
           opacity: 0, // Start invisible
-          appearDelay: Math.random() * 1000 // Staggered appearance
+          appearDelay: Math.random() * 1500 // Staggered appearance, slightly longer window
         });
         herbElement.style.transform = `translate(${herbs[i].x}px, ${herbs[i].y}px) rotate(${herbs[i].rotation}deg)`;
         herbElement.style.position = 'absolute'; // Ensure absolute positioning is set
       }
 
+      let frameCount = 0; // Used for flutter calculation
       let animationStartTime = null;
 
       function animateHerbs(timestamp) {
         if (!animationStartTime) animationStartTime = timestamp;
         const elapsedTime = timestamp - animationStartTime;
+        frameCount++;
 
         herbs.forEach(herb => {
           if (herb.gathered) return;
@@ -215,18 +280,24 @@
             herb.vy += GRAVITY;
             // Apply basic air resistance (drag)
             herb.vy *= (1 - DRAG_COEFFICIENT);
-            herb.vx *= (1 - DRAG_COEFFICIENT);
+            herb.vx *= (1 - DRAG_COEFFICIENT); // Drag also affects base horizontal movement
+
+            // Flutter calculation: sinusoidal horizontal movement
+            // Modulate flutter effect: stronger at start, dampens as it falls/lands or based on vy
+            const currentFlutterAmplitude = herb.flutterAmplitude * Math.max(0, (1 - (herb.y / GROUND_Y)*0.7 ) ); // Dampen flutter as it nears ground
+            const flutterOffset = Math.sin(herb.flutterPhase + frameCount * herb.flutterFrequency) * currentFlutterAmplitude;
 
             herb.y += herb.vy;
-            herb.x += herb.vx;
-            herb.rotation += herb.rotationSpeed;
+            herb.x += herb.vx + flutterOffset; // Base horizontal movement + flutter
+            herb.rotation += herb.rotationSpeed * Math.max(0.1, Math.abs(flutterOffset * 0.2)); // Rotation influenced by flutter "strength"
+
 
             // Check for landing
             if (herb.y >= GROUND_Y) {
               herb.y = GROUND_Y;
-              herb.vy = 0; // Stop vertical motion (can add bounce here later)
-              herb.vx = 0; // Stop horizontal drift on landing
-              herb.rotationSpeed = 0; // Stop rotation
+              herb.vy = 0;
+              herb.vx = 0;
+              herb.rotationSpeed = 0;
               herb.landed = true;
             }
           } else if (herb.gathering && !herb.gathered) {
@@ -271,11 +342,12 @@
         });
       }, GATHER_HERBS_DELAY);
 
-      // 4. Roll joint (paper hides, joint appears)
+      // 4. Roll joint (paper hides, joint appears with new SVG)
       const rollStartTime = GATHER_HERBS_DELAY + GATHER_HERBS_DURATION * 0.6; // Start rolling as herbs are still gathering
       setTimeout(() => {
         paper.style.animation = `rollJointPaperHide ${ROLL_JOINT_HIDE_DURATION / 1000}s ease-in forwards`;
 
+        joint.innerHTML = jointSVGData; // Set the SVG content
         joint.style.animation = `rollJointAppear ${ROLL_JOINT_APPEAR_DURATION / 1000}s ease-out forwards`;
         // Joint appears slightly after paper starts to hide, creating an overlap for smoother transition
         joint.style.animationDelay = `${ROLL_JOINT_HIDE_DURATION * 0.25 / 1000}s`;
